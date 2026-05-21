@@ -122,6 +122,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="section-title">My Inventory</div>
     <div class="header-actions">
       <button class="btn btn-ghost btn-sm" onclick="openImportModal()">&#8593; Import CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="openAddSealed()" style="border-color:#d07af5;color:#d07af5">+ Add Sealed</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCard()">+ Add Card</button>
     </div>
   </div>
@@ -163,9 +164,13 @@ textarea{resize:vertical;min-height:80px}
     <div class="section-title">New Trade</div>
     <button class="btn btn-ghost btn-sm" onclick="clearTradeSelection()">Clear</button>
   </div>
+  <div class="payment-toggle" style="margin-bottom:16px">
+    <button class="payment-opt" id="trade-type-card" onclick="setTradeType('card')">&#127183; Card Trade</button>
+    <button class="payment-opt" id="trade-type-sealed" onclick="setTradeType('sealed')" style="border-color:#d07af5;color:#d07af5">&#128230; Sealed Trade</button>
+  </div>
   <div class="search-wrap">
     <span class="search-icon">&#128269;</span>
-    <input type="text" id="trade-search" placeholder="Search cards going out&#8230;" oninput="renderTradeGrid()">
+    <input type="text" id="trade-search" placeholder="Search inventory going out&#8230;" oninput="renderTradeGrid()">
   </div>
   <div class="card-grid" id="trade-grid" style="margin-bottom:100px"></div>
   <div class="selection-bar" id="trade-bar" style="display:none">
@@ -251,6 +256,34 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 
+<!-- ADD SEALED MODAL -->
+<div class="modal-overlay" id="modal-add-sealed">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add Sealed Product</div>
+      <button class="modal-close" onclick="closeModal('modal-add-sealed')">&#10005;</button>
+    </div>
+    <div class="form-group"><label>Product Name *</label><input type="text" id="sealed-name" placeholder="e.g. Scarlet &amp; Violet ETB"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Set / Series</label><input type="text" id="sealed-set" placeholder="e.g. Scarlet &amp; Violet"></div>
+      <div class="form-group"><label>Product Type</label>
+        <select id="sealed-type">
+          <option value="Booster Box">Booster Box</option>
+          <option value="Elite Trainer Box">Elite Trainer Box (ETB)</option>
+          <option value="Booster Bundle">Booster Bundle</option>
+          <option value="Booster Pack">Booster Pack</option>
+          <option value="Collection Box">Collection Box</option>
+          <option value="Tin">Tin</option>
+          <option value="Blister Pack">Blister Pack</option>
+          <option value="Other Sealed">Other Sealed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="sealed-notes" placeholder="e.g. Japanese, 1st print, etc."></textarea></div>
+    <button class="btn btn-primary btn-full" onclick="saveSealed()" style="background:#d07af5;color:#000">+ Add to Inventory</button>
+  </div>
+</div>
+
 <!-- IMPORT MODAL -->
 <div class="modal-overlay" id="modal-import">
   <div class="modal">
@@ -303,9 +336,13 @@ textarea{resize:vertical;min-height:80px}
       <button class="modal-close" onclick="closeModal('modal-trade')">&#10005;</button>
     </div>
     <div class="cgo-wrap" id="trade-cards-preview"></div>
-    <div class="panel-title" style="margin-bottom:10px;margin-top:4px">Cards Coming In</div>
+    <div class="panel-title" style="margin-bottom:10px;margin-top:4px">Coming In</div>
+    <div class="payment-toggle" style="margin-bottom:12px">
+      <button class="payment-opt" id="in-type-card" onclick="setInType('card')">&#127183; Cards</button>
+      <button class="payment-opt" id="in-type-sealed" onclick="setInType('sealed')" style="">&#128230; Sealed</button>
+    </div>
     <div id="cards-in-list"></div>
-    <button class="btn btn-ghost btn-sm" onclick="addCardInRow()" style="margin-bottom:16px">+ Add Card</button>
+    <button class="btn btn-ghost btn-sm" id="add-in-row-btn" onclick="addCardInRow()" style="margin-bottom:16px">+ Add Item</button>
     <div class="form-group"><label>Notes (optional)</label><input type="text" id="trade-notes" placeholder="e.g. Traded at card show"></div>
     <button class="btn btn-primary btn-full" onclick="completeTrade()">&#8644; Complete Trade</button>
   </div>
@@ -351,7 +388,7 @@ function showPage(n){
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+n).classList.add('active');
   document.getElementById('nav-'+n).classList.add('active');
-  if(n==='sell')renderSellGrid();if(n==='trade')renderTradeGrid();if(n==='log')renderLog();if(n==='inventory')renderInventory();
+  if(n==='sell')renderSellGrid();if(n==='trade'){currentTradeType='card';setTradeType('card');renderTradeGrid();}if(n==='log')renderLog();if(n==='inventory')renderInventory();
 }
 
 /* ── CSV IMPORT ── */
@@ -515,9 +552,13 @@ async function completeSale(){
 /* ── TRADE ── */
 function renderTradeGrid(){
   const q=(document.getElementById('trade-search').value||'').toLowerCase();
-  const cards=inventory.filter(c=>!q||c.name.toLowerCase().includes(q)||(c.set_name||'').toLowerCase().includes(q));
+  let cards=inventory.filter(c=>!q||c.name.toLowerCase().includes(q)||(c.set_name||'').toLowerCase().includes(q));
+  // Filter by trade type — sealed trade shows only sealed, card trade shows only cards
+  if(currentTradeType==='sealed') cards=cards.filter(c=>c.grade_type==='Sealed');
+  else cards=cards.filter(c=>c.grade_type!=='Sealed');
   const grid=document.getElementById('trade-grid');
-  if(!cards.length){grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="empty-icon">&#8644;</div><p>No cards in inventory</p></div>`}
+  const label=currentTradeType==='sealed'?'sealed product':'cards';
+  if(!cards.length){grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="empty-icon">&#8644;</div><p>No ${label} in inventory</p></div>`}
   else grid.innerHTML=cards.map(c=>`<div class="card-tile ${tradeSelected.has(c.id)?'selected':''}" onclick="toggleTrade('${c.id}')">
     <div class="tile-name">${esc(c.name)}</div>
     <div class="tile-meta">${esc(c.set_name||'&#8212;')}</div>
@@ -537,7 +578,7 @@ function openTradeModal(){
   if(!tradeSelected.size)return;
   const cards=inventory.filter(c=>tradeSelected.has(c.id));
   document.getElementById('trade-cards-preview').innerHTML=`<div class="cgo-label">Cards Going Out (${cards.length})</div>${cards.map(c=>`<div class="cgo-item">${esc(c.name)}${c.set_name?' &#8212; '+esc(c.set_name):''} <span style="color:var(--muted)">${esc(c.grade_type||'')} ${esc(c.grade||'')}</span></div>`).join('')}`;
-  cardInRows=[{name:'',set_name:'',grade_type:'Ungraded',grade:''}];renderCardInRows();
+  currentInType='card';setInType('card');cardInRows=[{name:'',set_name:'',grade_type:'Ungraded',grade:''}];renderCardInRows();
   document.getElementById('trade-notes').value='';openModal('modal-trade');
 }
 
@@ -545,9 +586,20 @@ function renderCardInRows(){
   document.getElementById('cards-in-list').innerHTML=cardInRows.map((r,i)=>`
     <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Card ${i+1}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px">${r.sealed?'Sealed':'Card'} ${i+1}</span>
         ${cardInRows.length>1?`<button class="btn btn-ghost btn-sm" onclick="removeCardInRow(${i})">&#10005;</button>`:''}
       </div>
+      ${r.sealed?`
+      <div class="form-row" style="margin-bottom:8px">
+        <div><label>Product Name *</label><input type="text" value="${esc(r.name)}" oninput="updateCardIn(${i},'name',this.value)" placeholder="e.g. Scarlet &amp; Violet ETB"></div>
+        <div><label>Set / Series</label><input type="text" value="${esc(r.set_name)}" oninput="updateCardIn(${i},'set_name',this.value)" placeholder="e.g. Scarlet &amp; Violet"></div>
+      </div>
+      <div class="form-group">
+        <label>Product Type</label>
+        <select onchange="updateCardIn(${i},'product_type',this.value)">
+          ${['Booster Box','Elite Trainer Box','Booster Bundle','Booster Pack','Collection Box','Tin','Blister Pack','Other Sealed'].map(t=>`<option value="${t}" ${(r.product_type||'Booster Box')===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>`:`
       <div class="form-row" style="margin-bottom:8px">
         <div><label>Card Name *</label><input type="text" value="${esc(r.name)}" oninput="updateCardIn(${i},'name',this.value)" placeholder="e.g. Pikachu"></div>
         <div><label>Set</label><input type="text" value="${esc(r.set_name)}" oninput="updateCardIn(${i},'set_name',this.value)" placeholder="e.g. Jungle"></div>
@@ -555,19 +607,19 @@ function renderCardInRows(){
       <div class="form-row">
         <div><label>Grade Type</label><select onchange="updateCardIn(${i},'grade_type',this.value)">${['Ungraded','PSA','CGC','BGS','Other'].map(g=>`<option value="${g}" ${r.grade_type===g?'selected':''}>${g}</option>`).join('')}</select></div>
         <div><label>Grade</label><input type="text" value="${esc(r.grade)}" oninput="updateCardIn(${i},'grade',this.value)" placeholder="e.g. 9"></div>
-      </div>
+      </div>`}
     </div>`).join('');
 }
 
 function updateCardIn(i,f,v){cardInRows[i][f]=v}
-function addCardInRow(){cardInRows.push({name:'',set_name:'',grade_type:'Ungraded',grade:''});renderCardInRows()}
+function addCardInRow(){cardInRows.push(currentInType==='sealed'?{name:'',set_name:'',product_type:'Booster Box',sealed:true}:{name:'',set_name:'',grade_type:'Ungraded',grade:''});renderCardInRows()}
 function removeCardInRow(i){cardInRows.splice(i,1);renderCardInRows()}
 
 async function completeTrade(){
   const validIn=cardInRows.filter(r=>r.name.trim());
   if(!validIn.length){showToast('Add at least one card coming in');return}
   const cardsOut=inventory.filter(c=>tradeSelected.has(c.id));
-  const cardsIn=validIn.map(r=>({id:crypto.randomUUID(),name:r.name.trim(),set_name:r.set_name.trim(),grade_type:r.grade_type,grade:r.grade.trim(),condition:'Near Mint',created_at:new Date().toISOString()}));
+  const cardsIn=validIn.map(r=>r.sealed?{id:crypto.randomUUID(),name:r.name.trim(),set_name:r.set_name.trim(),grade_type:'Sealed',grade:r.product_type||'',condition:'Sealed',rarity:'',variance:'',card_number:'',notes:'',created_at:new Date().toISOString()}:{id:crypto.randomUUID(),name:r.name.trim(),set_name:r.set_name.trim(),grade_type:r.grade_type,grade:r.grade.trim(),condition:'Near Mint',created_at:new Date().toISOString()});
   const tx={id:crypto.randomUUID(),type:'Trade',payment_method:'Trade',amount:0,cards_out:cardsOut,cards_in:cardsIn,notes:document.getElementById('trade-notes').value.trim(),created_at:new Date().toISOString()};
   if(useSupabase){
     try{
@@ -610,6 +662,63 @@ async function saveCredentials(){
 }
 
 function clearAllData(){if(!confirm('Clear ALL local data? Cannot be undone.'))return;localStorage.removeItem('cv_inventory');localStorage.removeItem('cv_transactions');inventory=[];transactions=[];renderAll();showToast('Local data cleared')}
+
+/* ── ADD SEALED ── */
+function openAddSealed(){
+  ['sealed-name','sealed-set','sealed-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('sealed-type').value='Booster Box';
+  openModal('modal-add-sealed');
+}
+
+async function saveSealed(){
+  const name=document.getElementById('sealed-name').value.trim();
+  if(!name){showToast('Product name is required');return}
+  const card={
+    id:crypto.randomUUID(),
+    name,
+    set_name:document.getElementById('sealed-set').value.trim(),
+    grade_type:'Sealed',
+    grade:document.getElementById('sealed-type').value,
+    condition:'Sealed',
+    rarity:'',variance:'',card_number:'',
+    notes:document.getElementById('sealed-notes').value.trim(),
+    created_at:new Date().toISOString()
+  };
+  if(useSupabase){try{const{id,...ins}=card;const s=await addCardSB(ins);card.id=s.id}catch(e){showToast('Error saving to cloud');return}}
+  inventory.unshift(card);if(!useSupabase)saveLocal();renderInventory();closeModal('modal-add-sealed');showToast('Sealed product added!');
+}
+
+/* ── TRADE TYPE ── */
+let currentTradeType='card';
+let currentInType='card';
+
+function setTradeType(type){
+  currentTradeType=type;
+  document.getElementById('trade-type-card').className='payment-opt'+(type==='card'?' active-cash':'');
+  document.getElementById('trade-type-sealed').className='payment-opt'+(type==='sealed'?' active-venmo':'');
+  if(type==='sealed'){
+    document.getElementById('trade-type-sealed').style.cssText=type==='sealed'?'border-color:#d07af5;color:#d07af5;background:#1a0a2e':'';
+  } else {
+    document.getElementById('trade-type-sealed').style.cssText='border-color:#d07af5;color:#d07af5';
+  }
+  tradeSelected.clear();
+  renderTradeGrid();
+}
+
+function setInType(type){
+  currentInType=type;
+  document.getElementById('in-type-card').className='payment-opt'+(type==='card'?' active-cash':'');
+  document.getElementById('in-type-sealed').className='payment-opt'+(type==='sealed'?' active-venmo':'');
+  if(type==='sealed'){
+    document.getElementById('in-type-sealed').style.cssText='border-color:#d07af5;color:#d07af5;background:#1a0a2e';
+    document.getElementById('in-type-card').style.cssText='';
+  } else {
+    document.getElementById('in-type-sealed').style.cssText='border-color:#d07af5;color:#d07af5';
+    document.getElementById('in-type-card').style.cssText='';
+  }
+  cardInRows=[type==='card'?{name:'',set_name:'',grade_type:'Ungraded',grade:''}:{name:'',set_name:'',product_type:'Booster Box',sealed:true}];
+  renderCardInRows();
+}
 
 /* ── DELETE LOG ── */
 async function deleteLog(id){
