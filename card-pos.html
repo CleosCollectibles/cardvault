@@ -409,8 +409,7 @@ function parseCSVRow(line){
 function findCol(headers,candidates){for(const c of candidates){const i=headers.indexOf(c);if(i!==-1)return i}return -1}
 
 function parseCSV(text){
-  const lines=text.trim().split('
-');
+  const lines=text.trim().split('\n');
   if(lines.length<2){showToast('CSV appears empty');return}
   const headers=parseCSVRow(lines[0]).map(h=>h.toLowerCase().trim());
   const cm={
