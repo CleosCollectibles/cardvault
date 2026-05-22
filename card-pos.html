@@ -421,7 +421,8 @@ function parseCSV(text){
     variance:findCol(headers,['variance','finish']),
     cardnum:findCol(headers,['card number','card #','number']),
     qty:findCol(headers,['quantity','qty']),
-    category:findCol(headers,['category','portfolio name'])
+    category:findCol(headers,['category','portfolio name']),
+    market_price:findCol(headers,['market price','market value','price','value'])
   };
   pendingImport=[];
   const get=(row,col)=>(col!==-1&&row[col]!==undefined)?row[col].trim():'';
@@ -437,7 +438,8 @@ function parseCSV(text){
     else if(gradeRaw&&!/ungraded/i.test(gradeRaw)){gradeVal=gradeRaw}
     const qty=Math.max(1,parseInt(get(row,cm.qty))||1);
     for(let q=0;q<qty;q++){
-      pendingImport.push({id:crypto.randomUUID(),name,set_name:get(row,cm.set),grade_type:gradeType,grade:gradeVal,condition:get(row,cm.condition)||'Near Mint',rarity:get(row,cm.rarity),variance:get(row,cm.variance),card_number:get(row,cm.cardnum),notes:get(row,cm.category),created_at:new Date().toISOString()});
+      const rawPrice=get(row,cm.market_price).replace(/[$,]/g,'').trim();const mktPrice=parseFloat(rawPrice)||null;
+      pendingImport.push({id:crypto.randomUUID(),name,set_name:get(row,cm.set),grade_type:gradeType,grade:gradeVal,condition:get(row,cm.condition)||'Near Mint',rarity:get(row,cm.rarity),variance:get(row,cm.variance),card_number:get(row,cm.cardnum),market_price:mktPrice,notes:get(row,cm.category),created_at:new Date().toISOString()});
     }
   }
   if(!pendingImport.length){showToast('No valid cards found in CSV');return}
@@ -482,6 +484,10 @@ function renderInventory(){
     ${c.rarity?`<div class="tile-meta">${esc(c.rarity)}${c.variance?' &middot; '+esc(c.variance):''}</div>`:''}
     ${c.condition&&c.condition!=='Sealed'?`<div class="tile-meta">${esc(c.condition)}</div>`:''}
     <span class="tile-badge badge-${(c.grade_type||'ungraded').toLowerCase()}">${esc(c.grade_type||'Ungraded')}${c.grade?' '+esc(c.grade):''}</span>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid #333;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:11px;color:var(--muted)">Market</span>
+      <span style="font-size:14px;font-weight:700;color:${c.market_price?'var(--accent)':'#555'}">${c.market_price?'$'+Number(c.market_price).toFixed(2):'&#8212;'}</span>
+    </div>
     <div class="card-actions"><button class="btn btn-ghost btn-sm" onclick="deleteCard('${c.id}')">&#128465;</button></div>
   </div>`).join('');
 }
@@ -491,7 +497,7 @@ function openAddCard(){['add-name','add-set','add-cardnum','add-grade','add-rari
 async function saveCard(){
   const name=document.getElementById('add-name').value.trim();
   if(!name){showToast('Card name is required');return}
-  const card={id:crypto.randomUUID(),name,set_name:document.getElementById('add-set').value.trim(),card_number:document.getElementById('add-cardnum').value.trim(),grade_type:document.getElementById('add-grade-type').value,grade:document.getElementById('add-grade').value.trim(),rarity:document.getElementById('add-rarity').value.trim(),variance:document.getElementById('add-variance').value.trim(),condition:document.getElementById('add-condition').value,notes:document.getElementById('add-notes').value.trim(),created_at:new Date().toISOString()};
+  const card={id:crypto.randomUUID(),name,set_name:document.getElementById('add-set').value.trim(),card_number:document.getElementById('add-cardnum').value.trim(),grade_type:document.getElementById('add-grade-type').value,grade:document.getElementById('add-grade').value.trim(),rarity:document.getElementById('add-rarity').value.trim(),variance:document.getElementById('add-variance').value.trim(),condition:document.getElementById('add-condition').value,market_price:null,notes:document.getElementById('add-notes').value.trim(),created_at:new Date().toISOString()};
   if(useSupabase){try{const{id,...ins}=card;const s=await addCardSB(ins);card.id=s.id}catch(e){showToast('Error saving to cloud');return}}
   inventory.unshift(card);if(!useSupabase)saveLocal();renderInventory();closeModal('modal-add');showToast('Card added!');
 }
@@ -512,7 +518,7 @@ function openAddSealed(){
 async function saveSealed(){
   const name=document.getElementById('sealed-name').value.trim();
   if(!name){showToast('Product name is required');return}
-  const card={id:crypto.randomUUID(),name,set_name:document.getElementById('sealed-set').value.trim(),grade_type:'Sealed',grade:document.getElementById('sealed-type').value,condition:'Sealed',rarity:'',variance:'',card_number:'',notes:document.getElementById('sealed-notes').value.trim(),created_at:new Date().toISOString()};
+  const card={id:crypto.randomUUID(),name,set_name:document.getElementById('sealed-set').value.trim(),grade_type:'Sealed',grade:document.getElementById('sealed-type').value,condition:'Sealed',rarity:'',variance:'',card_number:'',market_price:null,notes:document.getElementById('sealed-notes').value.trim(),created_at:new Date().toISOString()};
   if(useSupabase){try{const{id,...ins}=card;const s=await addCardSB(ins);card.id=s.id}catch(e){showToast('Error saving to cloud');return}}
   inventory.unshift(card);if(!useSupabase)saveLocal();renderInventory();closeModal('modal-add-sealed');showToast('Sealed product added!');
 }
@@ -570,6 +576,7 @@ function renderTxOutGrid(){
       <div class="tile-meta">${esc(c.set_name||'&#8212;')}</div>
       ${c.card_number?`<div class="tile-meta">#${esc(c.card_number)}</div>`:''}
       <span class="tile-badge badge-${(c.grade_type||'ungraded').toLowerCase()}">${esc(c.grade_type||'Ungraded')}${c.grade?' '+esc(c.grade):''}</span>
+      ${c.market_price?`<div style="margin-top:8px;padding-top:6px;border-top:1px solid #333;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:11px;color:var(--muted)">Market</span><span style="font-size:13px;font-weight:700;color:var(--accent)">$${Number(c.market_price).toFixed(2)}</span></div>`:''}
     </div>`).join('');
   }
   const sel=document.getElementById('tx-out-selected');
